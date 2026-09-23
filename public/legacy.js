@@ -1,10 +1,26 @@
+(() => {
 const byId = (id) => document.getElementById(id);
 
 const sections = ['intro', 'game', 'reflex', 'puzzle', 'pin', 'story'];
 const transitionWash = byId('transitionWash');
-let currentSection = 'intro';
+const progressKey = 'blue-birthday-progress-v2';
+const readProgress = () => {
+  try { return JSON.parse(window.sessionStorage.getItem(progressKey) || '{}'); } catch { return {}; }
+};
+const saveProgress = (patch) => {
+  try { window.sessionStorage.setItem(progressKey, JSON.stringify({ ...readProgress(), ...patch })); } catch { /* Storage may be unavailable. */ }
+};
+const savedProgress = readProgress();
+let currentSection = sections.includes(savedProgress.section) ? savedProgress.section : 'intro';
 let transitionCleanupTimer = null;
 let storyWheelLocked = false;
+let storyScrollSaveTimer = null;
+
+byId('story').addEventListener('scroll', () => {
+  if (currentSection !== 'story') return;
+  window.clearTimeout(storyScrollSaveTimer);
+  storyScrollSaveTimer = window.setTimeout(() => saveProgress({ storyScroll: byId('story').scrollTop }), 120);
+}, { passive: true });
 
 byId('story').addEventListener('wheel', (event) => {
   if (window.innerWidth <= 820 || Math.abs(event.deltaY) < 8) return;
@@ -36,6 +52,7 @@ function goTo(next) {
   window.setTimeout(() => {
     sections.forEach((id) => { byId(id).hidden = id !== next; });
     currentSection = next;
+    saveProgress({ section: next, storyScroll: next === 'story' ? 0 : savedProgress.storyScroll || 0 });
     window.scrollTo({ top: 0, behavior: 'instant' });
     if (next === 'game') startGame();
     if (next === 'reflex') startSignalGame();
@@ -497,7 +514,29 @@ function launchConfetti(total = 70) {
 }
 
 const jarStars = [...document.querySelectorAll('.jar-star')];
-let collectedStars = 0;
+let collectedStars = Math.max(0, Math.min(jarStars.length, Number(savedProgress.collectedStars) || 0));
+
+function addSavedStar(index) {
+  const savedStar = document.createElement('span');
+  savedStar.textContent = index % 2 ? '♥' : '★';
+  byId('jarFill').appendChild(savedStar);
+}
+
+function syncJarProgress() {
+  byId('jarFill').innerHTML = '';
+  jarStars.forEach((star, index) => {
+    const isCollected = index < collectedStars;
+    star.classList.toggle('collected', isCollected);
+    star.disabled = isCollected;
+    if (isCollected) addSavedStar(index);
+  });
+  byId('jarCount').textContent = `${collectedStars}/5`;
+  if (collectedStars === jarStars.length) {
+    byId('starJarGame').classList.add('is-complete');
+    byId('jarReveal').textContent = 'Semua bintang sudah terkumpul. Sekarang buat satu harapan.';
+    byId('wishButton').disabled = false;
+  }
+}
 
 jarStars.forEach((star) => {
   star.addEventListener('click', () => {
@@ -509,9 +548,8 @@ jarStars.forEach((star) => {
     star.classList.add('collected');
     star.disabled = true;
     collectedStars += 1;
-    const savedStar = document.createElement('span');
-    savedStar.textContent = collectedStars % 2 ? '★' : '✦';
-    byId('jarFill').appendChild(savedStar);
+    addSavedStar(collectedStars - 1);
+    saveProgress({ collectedStars });
     byId('jarCount').textContent = `${collectedStars}/5`;
     if (collectedStars === jarStars.length) {
       byId('starJarGame').classList.add('is-complete');
@@ -526,7 +564,32 @@ byId('wishButton').addEventListener('click', () => {
   document.querySelector('.wish-section').classList.add('is-wished');
   byId('wishFinal').classList.add('is-visible');
   byId('wishResult').textContent = 'Semoga yang kamu bisikkan tadi pelan-pelan menemukan jalannya.';
+  saveProgress({ wished: true });
   launchConfetti(48);
 });
 
+function restoreExperience() {
+  sections.forEach((id) => { byId(id).hidden = id !== currentSection; });
+  syncJarProgress();
+
+  if (savedProgress.wished) {
+    document.querySelector('.wish-section').classList.add('is-wished');
+    byId('wishFinal').classList.add('is-visible');
+    byId('wishResult').textContent = 'Semoga yang kamu bisikkan tadi pelan-pelan menemukan jalannya.';
+  }
+
+  if (currentSection === 'game') startGame();
+  if (currentSection === 'reflex') startSignalGame();
+  if (currentSection === 'puzzle') schedulePuzzleClue();
+  if (currentSection === 'story') {
+    observeReveals();
+    window.requestAnimationFrame(() => {
+      byId('story').scrollTop = Math.max(0, Number(savedProgress.storyScroll) || 0);
+      byId('story').querySelector('.story-hero').classList.add('is-visible');
+    });
+  }
+}
+
+restoreExperience();
 syncSoundButton();
+})();
