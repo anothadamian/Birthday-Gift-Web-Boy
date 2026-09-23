@@ -1066,3 +1066,10 @@ body:has(#intro[hidden]) .hero-decor {
   .postcard { right: 24px; top: calc(50% + 88px); width: 74px; min-height: 96px; opacity: .96; }
   .postcard-photo { width: 100%; height: 71px; }
 }
+
+/* Keep inactive stages out of layout even when responsive rules set display. */
+#intro[hidden],
+.scene[hidden],
+.story[hidden] {
+  display: none !important;
+}
